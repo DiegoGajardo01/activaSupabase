@@ -1,0 +1,12 @@
+{
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "installCommand": "pip install -r requirements.txt",
+  "crons": [
+    {
+      "path": "/api/keep-alive",
+      "schedule": "0 0 */3 * *"
+    }
+  ]
+}
+
