@@ -70,15 +70,57 @@ class handler(BaseHTTPRequestHandler):
                             continue
                         try:
                             tables_tried.append(try_table)
-                            # Hacer una consulta simple
-                            response = supabase.table(try_table).select('*', count='exact').limit(1).execute()
+                            # Intentar obtener el count correcto
+                            count_value = None
+                            
+                            # Método más confiable: hacer una consulta con count='exact' sin limit
+                            try:
+                                count_query = supabase.table(try_table).select('*', count='exact').limit(0)
+                                count_response = count_query.execute()
+                                
+                                # Intentar usar el método interno para obtener el count desde headers
+                                if hasattr(count_response, '_get_count_from_content_range_header'):
+                                    try:
+                                        count_value = count_response._get_count_from_content_range_header()
+                                    except:
+                                        pass
+                                
+                                # Si no funcionó, usar el atributo count directamente
+                                if (count_value is None or count_value == 0) and hasattr(count_response, 'count'):
+                                    count_value = count_response.count
+                                    
+                            except Exception as e:
+                                # Si falla, continuamos sin count
+                                pass
+                            
+                            # Si aún no tenemos count, hacer una consulta simple para activar la DB
+                            # y contar manualmente los resultados (limitado a 1000)
+                            if count_value is None or count_value == 0:
+                                try:
+                                    data_response = supabase.table(try_table).select('*').limit(1000).execute()
+                                    if hasattr(data_response, 'data'):
+                                        manual_count = len(data_response.data)
+                                        if manual_count == 1000:
+                                            count_value = "1000+ (limitado)"
+                                        elif manual_count > 0:
+                                            count_value = manual_count
+                                        else:
+                                            # Si el count es 0, puede ser por RLS (Row Level Security)
+                                            # La consulta funciona pero no devuelve datos visibles
+                                            count_value = "0 (RLS activo)"
+                                except:
+                                    pass
+                            
+                            # Hacer una consulta final para asegurar que la DB está activa
+                            response = supabase.table(try_table).select('*').limit(1).execute()
+                            
                             success = True
                             results.append({
                                 'project': project_name,
                                 'status': 'success',
                                 'message': f'Database kept alive successfully',
                                 'table_used': try_table,
-                                'count': response.count if hasattr(response, 'count') else 'N/A'
+                                'count': count_value if count_value is not None else 'N/A'
                             })
                             break
                         except Exception as table_err:
